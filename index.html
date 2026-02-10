@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RRT Tool – Cây 1 (HDSD)</title>
+  <style>
+    :root{
+      --bg:#f3f5f9;
+      --card:#ffffff;
+      --text:#1b2430;
+      --muted:#6b7280;
+      --line:#aeb7c6;
+      --primary:#1a73e8;
+      --shadow:0 10px 26px rgba(17,24,39,.14);
+      --radius:12px;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Be Vietnam Pro", sans-serif;
+      color:var(--text);
+      background: var(--bg);
+      overflow:hidden;
+    }
+    header{
+      position:fixed;
+      inset:0 0 auto 0;
+      height:64px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding: 0 18px;
+      background: linear-gradient(#fff, rgba(255,255,255,.92));
+      border-bottom: 1px solid rgba(0,0,0,.08);
+      z-index:10;
+    }
+    .hdr-left{ display:flex; flex-direction:column; gap:2px; }
+    .hdr-left b{ font-size:16px; }
+    .hdr-left span{ font-size:12px; color:var(--muted); }
+    .hint{
+      display:flex; gap:10px; align-items:center;
+      font-size:12px; color:var(--muted);
+    }
+    .chip{
+      padding:7px 10px;
+      border:1px solid rgba(0,0,0,.08);
+      background:#fff;
+      border-radius:999px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.04);
+      white-space:nowrap;
+    }
+
+    .wrap{ position:fixed; inset:64px 0 0 0; display:flex; overflow:hidden; }
+    .stage{ position:relative; flex:1; overflow:hidden; }
+    svg#edges{ position:absolute; inset:0; pointer-events:none; }
+
+    /* Center hex */
+    .center{
+      position:absolute;
+      width: 160px;
+      height: 138px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      color:#111827;
+      font-weight:900;
+      letter-spacing:.3px;
+      background: #f6c000;
+      filter: drop-shadow(0 10px 18px rgba(0,0,0,.18));
+      clip-path: polygon(25% 6%, 75% 6%, 96% 50%, 75% 94%, 25% 94%, 4% 50%);
+      user-select:none;
+    }
+    .center small{
+      display:block;
+      font-weight:800;
+      font-size:12px;
+      opacity:.9;
+      margin-top:2px;
+    }
+
+    /* Node (title only) */
+    .node{
+      position:absolute;
+      min-width: 170px;
+      max-width: 230px;
+      padding: 12px 16px;
+      background: var(--card);
+      border: 1px solid rgba(0,0,0,.10);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      cursor:pointer;
+      user-select:none;
+      transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+    }
+    .node:hover{
+      transform: translateY(-1px);
+      border-color: rgba(26,115,232,.35);
+      box-shadow: 0 14px 34px rgba(17,24,39,.16);
+    }
+    .node .title{
+      font-weight:900;
+      font-size:16px;
+      line-height:1.2;
+    }
+    .node.active{
+      border-color: rgba(26,115,232,.85);
+      box-shadow: 0 16px 44px rgba(26,115,232,.14);
+      outline: 3px solid rgba(26,115,232,.10);
+    }
+
+    /* Special nodes */
+    .node.is-activate{
+      background:#e63b3b;
+      border-color: rgba(0,0,0,.08);
+      color:#fff;
+    }
+    .node.is-events{
+      background:#11a6b7;
+      border-color: rgba(0,0,0,.08);
+      color:#fff;
+    }
+    .node.is-members{
+      border:2px solid #f6b400;
+      background:#fff;
+    }
+
+    /* Hidden / reveal animation */
+    .node.hidden{ display:none; }
+    .node.reveal{
+      display:block;
+      animation: pop .14s ease-out;
+    }
+    @keyframes pop{
+      from{ transform: translateY(6px); opacity:.0; }
+      to{ transform: translateY(0); opacity:1; }
+    }
+
+    /* Help box */
+    .help{
+      position:absolute;
+      left: 18px;
+      top: 18px;
+      width: 380px;
+      background:#fff;
+      border:1px solid rgba(0,0,0,.10);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 14px 14px;
+    }
+    .help h4{ margin:0 0 10px 0; color:#b4235a; font-size:15px; }
+    .help ul{ margin:0; padding-left:18px; }
+    .help li{ margin:6px 0; color:#111827; }
+    .help li span{ color:var(--muted); font-size:12px; }
+
+    /* Modal */
+    .modal-backdrop{
+      position:fixed; inset:0;
+      background: rgba(17,24,39,.55);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:100;
+      padding: 20px;
+    }
+    .modal{
+      width: min(920px, 92vw);
+      max-height: min(720px, 86vh);
+      background:#fff;
+      border-radius: 10px;
+      box-shadow: 0 22px 60px rgba(0,0,0,.28);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+    }
+    .modal-head{
+      background: var(--primary);
+      color:#fff;
+      padding: 16px 18px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .modal-head h2{ margin:0; font-size:22px; letter-spacing:.2px; }
+    .close{
+      background: transparent; border:none;
+      color:#fff; font-size:26px; cursor:pointer; line-height:1;
+    }
+    .modal-body{ padding: 16px 18px 20px 18px; overflow:auto; }
+
+    .section{
+      margin-top: 8px;
+      border-top: 1px solid rgba(0,0,0,.08);
+      padding-top: 14px;
+    }
+    .section-title{
+      display:flex; align-items:center; gap:10px;
+      font-weight:900; color:#0f172a; font-size:20px;
+      margin:0 0 10px 0;
+    }
+    .bullets{ margin:0; padding-left: 20px; color:#111827; line-height:1.5; }
+    .bullets li{ margin: 6px 0; }
+    .bullets b{ font-weight:900; }
+
+    .badges{ display:flex; gap:10px; align-items:center; margin-top: 10px; }
+    .badge{
+      display:inline-flex; align-items:center; justify-content:center;
+      padding: 8px 12px; border-radius: 10px;
+      font-weight:900; font-size:14px; color:#fff;
+    }
+    .badge.admin{ background:#e63b3b; }
+    .badge.member{ background:#16a34a; }
+
+    @media (max-width: 900px){
+      .help{ width: calc(100% - 36px); }
+      body{ overflow:auto; }
+      .wrap{ position:relative; inset:auto; height:auto; }
+      .stage{ height: 760px; }
+    }
+/* ===== Modal 2 cột: Trái hình – Phải chữ ===== */
+.modal-body.two-col{
+  display:grid;
+  grid-template-columns: 360px 1fr;
+  gap: 14px;
+  padding: 14px 16px 18px 16px;
+}
+
+.col-left{
+  background:#f8fafc;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 12px;
+  padding: 12px;
+  min-height: 420px;
+  display:flex;
+  flex-direction:column;
+}
+
+.col-title{
+  font-weight:900;
+  color:#0f172a;
+  margin-bottom: 10px;
+}
+
+.preview-pane{
+  flex:1;
+  overflow:auto;
+  padding-right: 6px;
+}
+
+.preview-empty{
+  color:#64748b;
+  font-size:13px;
+  padding: 10px;
+  border: 1px dashed rgba(0,0,0,.15);
+  border-radius: 10px;
+  background:#fff;
+}
+
+.preview-img{
+  width:100%;
+  border-radius:10px;
+  border:1px solid #e5e7eb;
+  margin-bottom: 12px;
+  cursor: zoom-in;
+}
+
+.preview-cap{
+  font-size:12px;
+  color:#475569;
+  margin:-6px 0 10px 0;
+}
+
+.col-right{
+  overflow:auto;
+  max-height: min(62vh, 560px);
+  padding-right: 6px;
+}
+
+@media (max-width: 900px){
+  .modal-body.two-col{
+    grid-template-columns: 1fr;
+  }
+  .col-right{
+    max-height: none;
+  }
+}
+  </style>
+</head>
+<body>
+<header>
+  <div class="hdr-left">
+    <b>RRT Tool – Cây 1 (Hướng dẫn sử dụng công cụ)</b>
+    <span>Click 1 lần: chọn/nhấn mạnh node • Double click: mở chi tiết (chức năng & trường thông tin)</span>
+  </div>
+  <div class="hint">
+    <span class="chip">Sơ đồ chỉ hiện tiêu đề</span>
+    <span class="chip">Thành viên & Theo dõi sự kiện sẽ hiện theo nhánh</span>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="stage" id="stage">
+    <svg id="edges"></svg>
+
+    <div class="help">
+      <h4>Hướng dẫn sử dụng bản đồ:</h4>
+      <ul>
+        <li><b>Click 1 lần:</b> <span>Chọn node, đồng thời mở nhánh con (nếu có).</span></li>
+        <li><b>Double click:</b> <span>Xem chi tiết chức năng & trường thông tin.</span></li>
+        <li><b>ESC:</b> <span>Đóng cửa sổ chi tiết.</span></li>
+      </ul>
+    </div>
+
+    <div class="center" id="center">
+      RRT TOOL
+      <small>(Trung tâm)</small>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-backdrop" id="backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head">
+      <h2 id="modalTitle">—</h2>
+      <button class="close" id="btnClose" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body two-col">
+  <!-- CỘT TRÁI: ẢNH -->
+  <div class="col-left">
+    <div class="col-title">📸 Giao diện</div>
+    <div id="previewPane" class="preview-pane">
+      <div class="preview-empty">Chưa có ảnh minh hoạ cho mục này.</div>
+    </div>
+  </div>
+
+  <!-- CỘT PHẢI: CHỮ -->
+  <div class="col-right" id="textPane">
+    <div class="section">
+      <div class="section-title">🎯 Chức năng chính</div>
+      <ul class="bullets" id="purpose"></ul>
+    </div>
+
+    <div class="section">
+      <div class="section-title">🧾 Chi tiết hiển thị / thao tác</div>
+      <ul class="bullets" id="details"></ul>
+    </div>
+
+    <div class="section">
+      <div class="section-title">👥 Đối tượng</div>
+      <div class="badges" id="roles"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // =========================
+  // DATA
+  // =========================
+ const DATA = {
+  center: {
+    id: "rrt_center",
+    title: "RRT TOOL (Trung tâm)",
+    purpose: [
+      "Tổng quan hệ thống quản lý RRT: hồ sơ – nhân sự – lịch trực – đào tạo – thư viện – vật tư – kích hoạt – theo dõi sự kiện."
+    ],
+    details: [
+      "Sơ đồ chỉ hiển thị tên các menu để xem cấu trúc nhanh (gọn, dễ nhìn).",
+      "Click vào một số menu sẽ làm hiện nhánh con liên quan (ví dụ: Biểu mẫu → Thành viên; Kích hoạt → Theo dõi sự kiện).",
+      "Double click từng menu để đọc chi tiết chức năng, luồng thao tác và các trường thông tin."
+    ],
+    roles: ["Admin","Member"]
+  },
+
+  nodes: [
+    {
+      id:"dashboard",
+      title:"Dashboard",
+      images: [
+        "images/Dashboard_1.png",
+        "images/dashboard_2.png"
+      ],
+      purpose:[
+        "Hiển thị nhanh các thông báo/trạng thái quan trọng để người dùng nắm tình hình trong ngày."
+      ],
+      details:[
+        "<b>Lịch trực:</b> Hiển thị thông báo lịch trực trong ngày, giúp người dùng xem nhanh lịch trình của mình.",
+        "<b>Trạng thái kích hoạt:</b> Theo dõi số lượng thành viên đã phản hồi (Chấp nhận/Từ chối) sau lệnh khẩn cấp."
+      ],
+      roles:["Admin","Member"]
+    },
+
+    {
+      id:"bieu_mau",
+      title:"Biểu mẫu RRT",
+      images: [
+        "images/Bieumau.png"
+      ],
+      purpose:[
+        "Nơi lưu trữ và chỉnh sửa hồ sơ cá nhân của từng thành viên RRT.",
+        "Là đầu vào dữ liệu cho quản lý nhân sự và các chức năng điều động/kích hoạt."
+      ],
+      details:[
+        "Sau khi tạo tài khoản, thành viên vào đây để tạo hồ sơ “+ Biểu mẫu RRT” và chỉnh sửa thông tin cá nhân khi cần.",
+        "Admin xem tổng hợp toàn bộ hồ sơ thành viên và thực hiện <b>phê duyệt</b>.",
+        "<b>Xuất RRT-ers:</b> Xuất danh sách toàn bộ RRT về máy dưới dạng Excel để lưu trữ/đối chiếu (Admin).",
+        "Sau khi phê duyệt, hồ sơ sẽ được đưa vào menu <b>Thành viên</b> để quản lý đội và vị trí chuyên môn."
+      ],
+      roles:["Admin","Member"],
+      reveals:"thanh_vien"
+    },
+
+    {
+      id:"thanh_vien",
+      title:"Thành viên",
+      className:"is-members hidden",
+      images: [
+        "images/thanhvien.png"
+      ],
+      purpose:[
+        "Quản lý danh sách thành viên đã được phê duyệt để phục vụ điều phối/kích hoạt nhanh."
+      ],
+      details:[
+        "Hồ sơ sẽ được chuyển sang đây sau khi Admin phê duyệt tại Biểu mẫu RRT.",
+        "Admin phân đội và gán <b>vị trí chuyên môn</b> cho từng thành viên để hỗ trợ chọn nhanh khi kích hoạt."
+      ],
+      roles:["Admin"]
+    },
+
+    {
+      id:"lich_truc",
+      title:"Lịch trực",
+      images: [
+        "images/lichtruc1.png"
+      ],
+      purpose:[
+        "Quản lý phân công trực theo ngày/đội và theo dõi phản hồi của thành viên trực."
+      ],
+      details:[
+        "<b>Tạo lịch trực:</b> Chọn ngày và chọn đội (đội cố định theo thứ tự).",
+        "Có thể theo dõi <b>trạng thái phản hồi</b> của từng thành viên trực.",
+        "<b>Chức năng bổ trợ:</b>",
+        "• <b>Điều chỉnh nhân sự trực:</b> cập nhật thay đổi khi có biến động nhân sự.",
+        "• <b>Chọn đội trực thông minh:</b> gợi ý dựa trên <b>khoảng cách ngày nghỉ</b> để phân bổ công bằng."
+      ],
+      roles:["Admin"]
+    },
+
+    {
+      id:"dao_tao",
+      title:"Đào tạo",
+      images: [
+        "images/daotao_1.png",
+        "images/daotao_2.png"
+      ],
+      purpose:[
+        "Theo dõi quá trình đào tạo, phục vụ đánh giá năng lực và sẵn sàng của RRT."
+      ],
+      details:[
+        "<b>Admin:</b> tạo và theo dõi quá trình đào tạo; thêm thành viên phù hợp; gửi thông báo; ghi nhận kết quả.",
+        "<b>Member:</b> xem quá trình/kết quả; chỉ xem được các khóa có mình tham gia.",
+        "<b>Đặc biệt:</b> kết quả đào tạo được ghi nhận và <b>link vào hồ sơ cá nhân</b> tại Biểu mẫu RRT."
+      ],
+      roles:["Admin","Member"]
+    },
+
+    {
+      id:"thu_vien",
+      title:"Thư viện",
+      images: [
+        "images/thuvien.png"
+      ],
+      purpose:[
+        "Kho lưu trữ tài liệu chuyên môn, SOP và biểu mẫu phục vụ RRT."
+      ],
+      details:[
+        "<b>Admin:</b> tải lên và chỉnh sửa tài liệu (có quyền thêm/bớt).",
+        "<b>Member:</b> chỉ xem và tải biểu mẫu/tài liệu cần thiết."
+      ],
+      roles:["Admin","Member"]
+    },
+
+    {
+      id:"vat_tu",
+      title:"Vật tư",
+      images: [
+        "images/vattu.png"
+      ],
+      purpose:[
+        "Ghi nhận và quản lý vật tư phục vụ đáp ứng."
+      ],
+      details:[
+        "Ghi nhận và quản lý vật tư tự động sau mỗi lần cấp phát."
+      ],
+      roles:["Admin"]
+    },
+
+    {
+      id:"kich_hoat",
+      title:"Kích hoạt khẩn cấp",
+      className:"is-activate",
+      images: [
+        "images/kichhoat_1.png",
+        "images/kichhoat_2.png"
+      ],
+      purpose:[
+        "Điều động nhanh thành viên RRT theo văn bản/chỉ đạo kích hoạt từ BGĐ."
+      ],
+      details:[
+        "Sau khi có văn bản chỉ đạo kích hoạt từ BGĐ, Admin căn cứ danh sách để lựa chọn thành viên phù hợp và gửi thông báo kích hoạt.",
+        "Có bộ lọc theo <b>đội</b> và theo <b>vị trí</b> để phục vụ chọn nhanh.",
+        "Có <b>gợi ý chọn đội đang trực</b> trong ngày tương ứng (nếu cấu hình).",
+        "<b>Bảng mô tả sự kiện</b> sau khi chọn thành viên gồm:",
+        "• <b>Tạo mới</b> hoặc <b>thêm thành viên</b> vào sự kiện đã có.",
+        "• <b>Thời gian:</b> tự ghi theo thời gian kích hoạt trên công cụ.",
+        "• <b>Địa điểm:</b> vị trí xảy ra sự kiện.",
+        "• <b>Chi tiết sự kiện:</b> mô tả trực quan; làm căn cứ <b>đặt tên sự kiện</b> và theo dõi xuyên suốt quá trình đáp ứng.",
+        "Sau khi ấn <b>Tiếp tục</b> sẽ có cửa sổ <b>xem lại thông tin</b> trước khi ấn Kích hoạt."
+      ],
+      roles:["Admin"],
+      reveals:"theo_doi"
+    },
+
+    {
+      id:"theo_doi",
+      title:"Theo dõi sự kiện",
+      className:"is-events hidden",
+      images: [
+        "images/theodoisk_1.png",
+        "images/theodoisk_2.png"
+      ],
+      purpose:[
+        "Hồ sơ sự kiện được tạo tự động để quản lý và theo dõi toàn bộ quá trình đáp ứng."
+      ],
+      details:[
+        "Được <b>tạo tự động</b> sau mỗi lần kích hoạt và lưu trữ toàn bộ quá trình đáp ứng tương ứng với từng sự kiện.",
+        "<b>Là nơi lưu trữ toàn bộ các sự kiện</b> để rút kinh nghiệm và tham khảo các đợt đáp ứng trước.",
+        "Thiết kế như một <b>group chat</b> tương tự Zalo, kèm các mục hỗ trợ:",
+        "• <b>Phương án:</b> theo dõi tiến độ công việc dựa trên IAP; kết quả có thể ghi nhận để phục vụ báo cáo.",
+        "• <b>Yêu cầu hỗ trợ:</b> RRT yêu cầu nhanh hỗ trợ hiện trường (nhân lực/vật tư/khác), kèm số lượng và chi tiết tình huống để Admin báo cáo lãnh đạo xem xét.",
+        "• <b>Đính kèm:</b> file/hình ảnh/video hiện trường.",
+        "• <b>Lập báo cáo:</b> báo cáo khẩn, báo cáo ngày và báo cáo kết thúc sự kiện.",
+        "<b>Báo cáo thông minh:</b> dựa trên hoạt động ghi nhận thực tế; Member gửi lên; Admin xem và tải về dưới dạng form sẵn để trình lãnh đạo."
+      ],
+      roles:["Admin","Member"]
+    }
+  ]
+};
+
+  // =========================
+  // Elements
+  // =========================
+  const stage = document.getElementById("stage");
+  const edges = document.getElementById("edges");
+  const centerEl = document.getElementById("center");
+
+  const backdrop = document.getElementById("backdrop");
+  const modalTitle = document.getElementById("modalTitle");
+  const purposeEl = document.getElementById("purpose");
+  const detailsEl = document.getElementById("details");
+  const rolesEl = document.getElementById("roles");
+const previewPane = document.getElementById("previewPane");
+  const btnClose = document.getElementById("btnClose");
+
+  const nodesMap = new Map(); // id -> element
+  const dataById = new Map(DATA.nodes.map(n => [n.id, n]));
+
+  function size(){ return { w: stage.clientWidth, h: stage.clientHeight }; }
+
+  function setCenterPosition(){
+    const {w,h} = size();
+    const x = w/2 - 80;
+    const y = h/2 - 69;
+    centerEl.style.left = `${x}px`;
+    centerEl.style.top  = `${y}px`;
+    centerEl.onclick = () => selectNode("rrt_center");
+    centerEl.ondblclick = () => openModal(DATA.center);
+  }
+
+  function createNode(node){
+    const el = document.createElement("div");
+    el.className = `node ${node.className || ""}`.trim();
+    el.dataset.id = node.id;
+    el.innerHTML = `<div class="title">${node.title}</div>`;
+    stage.appendChild(el);
+    nodesMap.set(node.id, el);
+
+    // Click: highlight + reveal child if configured
+    el.addEventListener("click", () => {
+      selectNode(node.id);
+      if(node.reveals) toggleReveal(node.reveals, node.id);
+    });
+
+    // Double click: modal
+    el.addEventListener("dblclick", () => openModal(node));
+
+    return el;
+  }
+
+  function clearActive(){
+    stage.querySelectorAll(".node.active").forEach(e => e.classList.remove("active"));
+  }
+  function selectNode(id){
+    clearActive();
+    const el = nodesMap.get(id);
+    if(el) el.classList.add("active");
+  }
+
+  function openModal(node){
+    modalTitle.textContent = node.title;
+    purposeEl.innerHTML = "";
+    detailsEl.innerHTML = "";
+    rolesEl.innerHTML = "";
+  // ===== RENDER ẢNH MINH HỌA (CỘT TRÁI) =====
+  previewPane.innerHTML = ""; // reset
+
+  const imgs = (node.images || []).filter(Boolean);
+  if (imgs.length > 0) {
+    imgs.forEach((src, idx) => {
+      const a = document.createElement("a");
+      a.href = src;
+      a.target = "_blank";
+      a.rel = "noopener";
+
+      const img = document.createElement("img");
+      img.className = "preview-img";
+      img.alt = `Ảnh minh hoạ ${node.title} - ${idx + 1}`;
+      img.src = src;
+
+      img.onerror = () => {
+        const div = document.createElement("div");
+        div.className = "preview-empty";
+        div.innerHTML = `Không load được ảnh: <b>${src}</b><br/>Kiểm tra lại tên file + đường dẫn (hoa/thường) trong thư mục <b>images</b>.`;
+        img.replaceWith(div);
+      };
+
+      a.appendChild(img);
+      previewPane.appendChild(a);
+    });
+  } else {
+    previewPane.innerHTML = `<div class="preview-empty">Chưa có ảnh minh hoạ cho mục này.</div>`;
+  }
+
+
+    (node.purpose || []).forEach(t => {
+      const li = document.createElement("li");
+      li.innerHTML = t;
+      purposeEl.appendChild(li);
+    });
+    (node.details || []).forEach(t => {
+      const li = document.createElement("li");
+      li.innerHTML = t;
+      detailsEl.appendChild(li);
+    });
+    (node.roles || []).forEach(r => {
+      const b = document.createElement("div");
+      b.className = `badge ${r === "Admin" ? "admin" : "member"}`;
+      b.textContent = r;
+      rolesEl.appendChild(b);
+    });
+
+    backdrop.style.display = "flex";
+    backdrop.setAttribute("aria-hidden","false");
+  }
+  function closeModal(){
+    backdrop.style.display = "none";
+    backdrop.setAttribute("aria-hidden","true");
+  }
+  btnClose.addEventListener("click", closeModal);
+  backdrop.addEventListener("click", (e) => { if(e.target === backdrop) closeModal(); });
+  window.addEventListener("keydown", (e) => { if(e.key === "Escape") closeModal(); });
+
+  // =========================
+  // Reveal logic (only show child when parent clicked)
+  // =========================
+  const revealState = {
+    thanh_vien: false,
+    theo_doi: false
+  };
+
+  function showNode(id){
+    const el = nodesMap.get(id);
+    if(!el) return;
+    el.classList.remove("hidden");
+    el.classList.add("reveal");
+    setTimeout(()=>el.classList.remove("reveal"), 180);
+  }
+  function hideNode(id){
+    const el = nodesMap.get(id);
+    if(!el) return;
+    el.classList.add("hidden");
+  }
+
+  // Only one reveal open at a time looks cleaner
+  function toggleReveal(childId, parentId){
+    // close the other branch automatically for professional look
+    const other = (childId === "thanh_vien") ? "theo_doi" : "thanh_vien";
+    if(revealState[other]){ revealState[other] = false; hideNode(other); }
+
+    revealState[childId] = !revealState[childId];
+    if(revealState[childId]) showNode(childId);
+    else hideNode(childId);
+
+    layout(); // reposition neatly and redraw edges
+  }
+
+  // =========================
+  // Geometry helpers
+  // =========================
+  function centerOf(el){
+    const r = el.getBoundingClientRect();
+    const sr = stage.getBoundingClientRect();
+    return { x: (r.left - sr.left) + r.width/2, y: (r.top - sr.top) + r.height/2 };
+  }
+
+  function renderEdges(){
+    const {w,h} = size();
+    edges.setAttribute("width", w);
+    edges.setAttribute("height", h);
+    edges.innerHTML = `
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9.2" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(120,130,150,.85)"></path>
+        </marker>
+        <marker id="arrowBold" viewBox="0 0 10 10" refX="9.2" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(90,100,120,.9)"></path>
+        </marker>
+      </defs>
+    `;
+
+    function drawBezier(a, b, opts={}){
+      const { width=2, color="rgba(120,130,150,.70)", dashed=false, bold=false, label=null, labelOffsetY=-8 } = opts;
+      const dx = (b.x - a.x) * 0.35;
+      const c1 = { x: a.x + dx, y: a.y };
+      const c2 = { x: b.x - dx, y: b.y };
+      const d = `M ${a.x} ${a.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${b.x} ${b.y}`;
+
+      const path = document.createElementNS("http://www.w3.org/2000/svg","path");
+      path.setAttribute("d", d);
+      path.setAttribute("fill","none");
+      path.setAttribute("stroke", color);
+      path.setAttribute("stroke-width", width);
+      if(dashed) path.setAttribute("stroke-dasharray","6 6");
+      path.setAttribute("marker-end", bold ? "url(#arrowBold)" : "url(#arrow)");
+      edges.appendChild(path);
+
+      if(label){
+        const tx = (a.x + b.x)/2;
+        const ty = (a.y + b.y)/2 + labelOffsetY;
+        const text = document.createElementNS("http://www.w3.org/2000/svg","text");
+        text.setAttribute("x", tx);
+        text.setAttribute("y", ty);
+        text.setAttribute("text-anchor","middle");
+        text.setAttribute("font-size","14");
+        text.setAttribute("font-weight","800");
+        text.setAttribute("fill","rgba(17,24,39,.70)");
+        text.textContent = label;
+        edges.appendChild(text);
+      }
+    }
+
+    const c = centerOf(centerEl);
+
+    // Main visible nodes always connect to center (7 nodes)
+    const mainIds = ["dashboard","lich_truc","dao_tao","thu_vien","vat_tu","bieu_mau","kich_hoat"];
+    mainIds.forEach(id => {
+      const el = nodesMap.get(id);
+      if(!el) return;
+      drawBezier(c, centerOf(el), { width:2, color:"rgba(120,130,150,.65)" });
+    });
+
+    // Conditional edges: Biểu mẫu -> Thành viên (when shown)
+    if(revealState.thanh_vien){
+      const a = nodesMap.get("bieu_mau");
+      const b = nodesMap.get("thanh_vien");
+      if(a && b){
+        drawBezier(centerOf(a), centerOf(b), { dashed:true, label:"Phê duyệt", labelOffsetY:-10 });
+      }
+    }
+
+    // Conditional edges: Kích hoạt -> Theo dõi (when shown)
+    if(revealState.theo_doi){
+      const a = nodesMap.get("kich_hoat");
+      const b = nodesMap.get("theo_doi");
+      if(a && b){
+        drawBezier(centerOf(a), centerOf(b), { bold:true, width:4, color:"rgba(90,100,120,.88)", label:"Tự tạo hồ sơ", labelOffsetY:18 });
+      }
+    }
+  }
+
+  // =========================
+  // Professional layout (balanced, symmetric)
+  // =========================
+  function layout(){
+    setCenterPosition();
+    const {w,h} = size();
+
+    // Create nodes once
+    DATA.nodes.forEach(n => { if(!nodesMap.has(n.id)) createNode(n); });
+
+    // Ensure hidden states at startup
+    if(!revealState.thanh_vien) hideNode("thanh_vien");
+    if(!revealState.theo_doi) hideNode("theo_doi");
+
+    // Balanced ring around center (7 nodes)
+    // Top: Dashboard
+    // Upper-left: Thư viện, Upper-right: Biểu mẫu
+    // Mid-left: Đào tạo, Mid-right: Lịch trực
+    // Lower-left: Vật tư, Lower-right: Kích hoạt
+    const cx = w/2, cy = h/2;
+
+    const posMain = {
+      dashboard:  { x: cx - 90,  y: cy - 220 },
+      thu_vien:   { x: cx - 320, y: cy - 150 },
+      bieu_mau:   { x: cx + 140, y: cy - 150 },
+      dao_tao:    { x: cx - 360, y: cy - 10  },
+      lich_truc:  { x: cx + 180, y: cy - 10  },
+      vat_tu:     { x: cx - 320, y: cy + 150 },
+      kich_hoat:  { x: cx + 140, y: cy + 150 }
+    };
+
+    // Child nodes appear near their parent (only when revealed)
+    const posChild = {
+      thanh_vien: { x: posMain.bieu_mau.x + 200, y: posMain.bieu_mau.y + 150 },
+      theo_doi:   { x: posMain.kich_hoat.x - 40, y: posMain.kich_hoat.y + 110 }
+    };
+
+    // Apply positions (clamp inside stage)
+    function setPos(id, p){
+      const el = nodesMap.get(id);
+      if(!el) return;
+      el.style.left = `${clamp(p.x, 16, w - 260)}px`;
+      el.style.top  = `${clamp(p.y, 16, h - 110)}px`;
+    }
+    Object.entries(posMain).forEach(([id,p]) => setPos(id,p));
+
+    if(revealState.thanh_vien) setPos("thanh_vien", posChild.thanh_vien);
+    if(revealState.theo_doi) setPos("theo_doi", posChild.theo_doi);
+
+    // Draw edges last
+    renderEdges();
+  }
+
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+  window.addEventListener("resize", layout);
+  layout();
+</script>
+</body>
+</html>
